@@ -1,4 +1,4 @@
-<div aligh="center">
+<div align="center">
 <img width="400" alt="ASTRAIOStrans" src="https://github.com/user-attachments/assets/cc4c824e-ea37-4642-a3d9-70b131587379" />
 </div>
 <br>
