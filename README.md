@@ -7,4 +7,5 @@
 Well that's an exaggeration. It's a simple window manager that can overlay a window on another.
 
 It was made because the pi5's vulkan drivers are dookey, and it can't run gamescope.
+Work In Progress...
 </div>
