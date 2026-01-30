@@ -1,8 +1,12 @@
 #include "window_manager.hpp"
 #include <spdlog/spdlog.h>
 #include <X11/Xutil.h>
+#include <iostream>
 
 using ::std::unique_ptr;
+
+bool WindowManager::wm_detected_;
+Window esde;
 
 unique_ptr<WindowManager> WindowManager::Create()
 {
@@ -72,15 +76,29 @@ void WindowManager::Run()
     type[35] = "GenericEvent";
     type[36] = "LASTEvent";
 
-    wm_detected_ = false;
+    WindowManager::wm_detected_ = false;
     XSetErrorHandler(&WindowManager::OnWMDetected);
     XSelectInput(display_, root_, SubstructureRedirectMask | SubstructureNotifyMask);
     XSync(display_, false);
-    if(wm_detected_){
+    if(WindowManager::wm_detected_){
         spdlog::error(std::strcat("Detected another window manager on display ", XDisplayString(display_)));
         return;
     }
     XSetErrorHandler(&WindowManager::OnXError);
+
+    XGrabServer(display_);
+    Window returned_root, returned_parent;
+    Window* top_level_windows;
+    unsigned int num_top_level_windows;
+    if(XQueryTree(display_, root_, &returned_root, &returned_parent, &top_level_windows, &num_top_level_windows) == 0) std::exit(EXIT_FAILURE);
+    CHECK_EQ(returned_root, root_);
+    Window esde = top_level_windows[0];
+    spdlog::info(esde);
+    XUngrabServer(display_);
+
+    std::exit(EXIT_SUCCESS);
+
+    XResizeWindow(display_,esde,300,300);
 
     for (;;) {
         XEvent e;
@@ -136,7 +154,21 @@ void WindowManager::Run()
     }
 }
 
+void WindowManager::OnReparentNotify(const XReparentEvent& e) {}
+void WindowManager::OnMapNotify(const XMapEvent& e) {}
+void WindowManager::OnConfigureNotify(const XConfigureEvent& e) {}
+void WindowManager::OnButtonPress(const XButtonPressedEvent& e) {}
+void WindowManager::OnButtonRelease(const XButtonReleasedEvent& e) {}
+void WindowManager::OnMotionNotify(const XMotionEvent& e) {}
+void WindowManager::OnKeyPress(const XKeyPressedEvent& e) {}
+void WindowManager::OnKeyRelease(const XKeyReleasedEvent& e) {}
 void WindowManager::OnCreateNotify(const XCreateWindowEvent& e){}
+
+void WindowManager::OnDestroyNotify(const XDestroyWindowEvent& e)
+{
+    XSelectInput(display_,esde,SubstructureRedirectMask | SubstructureNotifyMask);
+    XMapWindow(display_, esde);
+}
 
 void WindowManager::OnConfigureRequest(const XConfigureRequestEvent& e) {
     XWindowChanges changes;
@@ -148,13 +180,44 @@ void WindowManager::OnConfigureRequest(const XConfigureRequestEvent& e) {
     changes.sibling = e.above;
     changes.stack_mode = e.detail;
     XConfigureWindow(display_, e.window, e.value_mask, &changes);
-    spdlog::info("Resize " + e.window + " to " + std::size<int>(e.width,e.height));
+}
+
+void WindowManager::OnMapRequest(const XMapRequestEvent& e) 
+{
+    Window w = e.window;
+    XSelectInput(display_,w,SubstructureRedirectMask | SubstructureNotifyMask);
+    XAddToSaveSet(display_,w);
+    XGrabKey(
+        display_,
+        XKeysymToKeycode(display_, XK_F4),
+        Mod1Mask,
+        w,
+        false,
+        GrabModeAsync,
+        GrabModeAsync);
+    //   d. Switch windows with alt + tab.
+    XGrabKey(
+        display_,
+        XKeysymToKeycode(display_, XK_Tab),
+        Mod1Mask,
+        w,
+        false,
+        GrabModeAsync,
+        GrabModeAsync);
+    XMapWindow(display_, w);
+}
+
+void WindowManager::OnUnmapNotify(const XUnmapEvent& e)
+{
+    XSelectInput(display_,esde,SubstructureRedirectMask | SubstructureNotifyMask);
+    XDestroyWindow(display_,e.window);
+    XRemoveFromSaveSet(display_, e.window);
 }
 
 int WindowManager::OnWMDetected(Display* display, XErrorEvent* e)
 {
-    CHECK_EQ(static_cast<int>(e->error_code), BadAccess);    
-    wm_detected_ = true;
+    CHECK_EQ(static_cast<int>(e->error_code), BadAccess);
+    WindowManager::wm_detected_ = true;
     return 0;
 }
 
