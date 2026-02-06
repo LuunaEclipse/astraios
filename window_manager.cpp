@@ -6,6 +6,7 @@ extern "C" {
 #include <algorithm>
 #include <spdlog/spdlog.h>
 #include "util.hpp"
+#include <SDL2/SDL.h>
 
 using ::std::max;
 using ::std::mutex;
@@ -160,7 +161,9 @@ Window WindowManager::Frame(Window w, bool was_created_before_window_manager) {
       XGetWMName(display_, esde_, &prop);
       spdlog::info("LAUNCHER FOUND:");
       spdlog::info(reinterpret_cast<char*>(prop.value));
-      frame = XCreateSimpleWindow(
+    }
+
+    frame = XCreateSimpleWindow(
         display_,
         root_,
         x_window_attrs.x,
@@ -170,11 +173,6 @@ Window WindowManager::Frame(Window w, bool was_created_before_window_manager) {
         BORDER_WIDTH,
         BORDER_COLOR,
         BG_COLOR);
-    }
-    else{
-        frame = esde_;
-    }
-
 
     XAddToSaveSet(display_, w);
     XReparentWindow(
@@ -226,9 +224,15 @@ Window WindowManager::Frame(Window w, bool was_created_before_window_manager) {
 }
 
 void WindowManager::Unframe(Window w) {
-  XUnmapWindow(display_, w);
+  const Window frame = clients_[w];
+  XUnmapWindow(display_, frame);
+  XReparentWindow(
+      display_,
+      w,
+      root_,
+      0, 0);
   XRemoveFromSaveSet(display_, w);
-  XDestroyWindow(display_, w);
+  XDestroyWindow(display_, frame);
   clients_.erase(w);
 }
 
@@ -243,30 +247,47 @@ void WindowManager::OnReparentNotify(const XReparentEvent& e) {}
 void WindowManager::OnMapNotify(const XMapEvent& e) {}
 
 void WindowManager::OnUnmapNotify(const XUnmapEvent& e) {
+  /*
   if (!clients_.count(e.window)) {
     return;
   }
   if (e.event == root_) {
     return;
   }
+  */
   XSelectInput(
       display_,
-      clients_[esde_],
+      esde_,
       SubstructureRedirectMask | SubstructureNotifyMask);
-  XSetInputFocus(display_, clients_[esde_], RevertToPointerRoot, CurrentTime);
-  Unframe(e.window);
+  XSetInputFocus(display_, esde_, RevertToPointerRoot, CurrentTime);
+  XUnmapWindow(display_, e.window);
+  XRemoveFromSaveSet(display_, e.window);
+  XDestroyWindow(display_, e.window);
 }
 
 void WindowManager::OnConfigureNotify(const XConfigureEvent& e) {}
 
 void WindowManager::OnMapRequest(const XMapRequestEvent& e) {
-  Window frame = Frame(e.window, false);
-  XSetInputFocus(display_, frame, RevertToParent, CurrentTime);
+  if(isfirst_)
+    {
+      isfirst_ = false;
+      esde_ = e.window;
+      XTextProperty prop;
+      XGetWMName(display_, esde_, &prop);
+      spdlog::info("LAUNCHER FOUND:");
+      spdlog::info(reinterpret_cast<char*>(prop.value));
+    }
+  // Window frame = Frame(e.window, false);
   XSelectInput(
       display_,
-      frame,
+      e.window,
       SubstructureRedirectMask | SubstructureNotifyMask);
   XMapWindow(display_, e.window);
+  XSync(display_, false);
+  XSetInputFocus(display_, e.window, RevertToPointerRoot, CurrentTime);
+  Atom wm_state   = XInternAtom (display_, "_NET_WM_STATE", true );
+  Atom wm_fullscreen = XInternAtom (display_, "_NET_WM_STATE_FULLSCREEN", true );
+  XChangeProperty(display_, e.window, wm_state, 0, 32, PropModeReplace, (unsigned char *)&wm_fullscreen, 1);
 }
 
 void WindowManager::OnConfigureRequest(const XConfigureRequestEvent& e) {
